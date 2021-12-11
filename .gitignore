@@ -1,0 +1,3 @@
+tests_parser/*
+test_codegen_v2/**
+.vscode/*
