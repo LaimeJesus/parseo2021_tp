@@ -6,7 +6,7 @@ from typing import List
 
 from .env import Env
 from .instructions import Alloc, ICall, Instruction, Load, MovInt, MovLabel, MovReg, Print, PrintChar, Return, Store
-from .util import createExprConstructor, isExprConstructor, isExprDef, isExprVar
+from .util import isExprConstructor, isExprDef, isExprVar, getExprConstructor
 
 class Tag:
     def __init__(self, tag: int, size: int = 1) -> None:
@@ -34,25 +34,25 @@ class FlechaCompiler:
         if name not in self.tags:
             self.lastId += 1
             self.tags[name] = Tag(self.lastId, size)
-            # raise f'Tag: {name} no existe'
         tag = self.tags[name]
         return tag
 
     def compileDef(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         name = exp[1]
-        defReg = env.get(name)
-        expIns = self.compileExpression(exp[2], env, defReg)
+        defReg = env.get(name).value()
+        r0 = env.fresh()
+        expIns = self.compileExpression(exp[2], env, r0)
         return [
             f"{name}:",
-            MovLabel(defReg.value(), name)
+            MovLabel(defReg, name)
         ] + expIns + [
-            MovReg(reg, defReg.value()),
+            MovReg(defReg, r0),
         ]
 
     def compileTagCharOrNumber(self, tag: Tag, exp: List, env: Env, reg: str) -> List[Instruction]:
         value = exp[1]
         slots = tag.size
-        tmp = "$t"
+        tmp = env.fresh()
         return [
             Alloc(reg, slots),
             MovInt(tmp, tag.tag),
@@ -65,63 +65,62 @@ class FlechaCompiler:
         tag = self.tag("Num")
         return self.compileTagCharOrNumber(tag, exp, env, reg)
 
-    # slots: 2
-    # slot 0: tag
-    # slot 1: char
     def compileChar(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         tag = self.tag("Char")
         return self.compileTagCharOrNumber(tag, exp, env, reg)
 
     def compileConstructor(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         value = exp[1]
-        reg0 = "$r0"
-        tmp = "$t"
+        r0 = env.fresh()
+        tmp = env.fresh()
         tag = self.tag(value)
         slots = tag.size
         return [
-            Alloc(reg0, slots),
+            Alloc(r0, slots),
             MovInt(tmp, tag),
-            Store(reg0, 0, tmp)
+            Store(r0, 0, tmp)
         ]
 
     def compileVar(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         name = exp[1]
-        tag = self.tag("Char")
-        slots = tag.size
         bindingValue = env.get(name)
-        reg0 = "$r0"
-        tmp = "$t"
-        return [
-            Alloc(reg0, slots),
-            MovInt(tmp, tag),
-            Store(reg0, 0, tmp), # slot 0 de reg
-            MovInt(tmp, bindingValue.value()), # slot 0 de reg
-            MovReg(reg, reg0)
-        ]
+        r0 = bindingValue.value()
+        if bindingValue.isRegister():
+            return [
+                MovReg(reg, r0)
+            ]
+        else:
+            return []
 
     def compileCase(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         pass
 
     def compileLet(self, exp: List, env: Env, reg: str) -> List[Instruction]:
-        pass
+        name = exp[1]
+        tmp = env.fresh()
+        insE1 = self.compileExpression(exp[2], env, tmp)
+        env.bindRegister(name, tmp)
+        insE2 = self.compileExpression(exp[3], env, reg)
+        env.unbindRegister(name)
+        return insE1 + insE2
 
     def compileLambda(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         pass
 
     # tiene un costructor al final en exp[1]
     def compileApplyCons(self, exp: List, env: Env, reg: str) -> List[Instruction]:
-        paramSize, expCons = createExprConstructor(exp)
-        regs = list(map(lambda x: f"$r{x}", range(1, paramSize + 2)))
+        paramSize, expCons = getExprConstructor(exp)
+        regs = []
+        for _ in range(paramSize + 1):
+            regs += env.fresh()
         name = expCons[1]
         self.tag(name, paramSize)
-        tmp = "$t"
-        constructorIns = self.compileExpression(expCons, env, tmp)
+        constructorIns = self.compileExpression(expCons, env, regs[0])
         instructions = []
-        curr = 0
+        curr = 1
         currExp = exp
         while curr < paramSize:
             instruction = self.compileExpression(currExp[2], env, regs[curr])
-            instructions += instruction
             instructions = instruction + instructions
             currExp = currExp[1]
             curr += 1

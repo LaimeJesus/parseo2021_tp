@@ -1,7 +1,13 @@
 
+from sys import flags
+
+
 class Binding:
     def value(self) -> str:
         raise Exception("Metodo Abstracto")
+
+    def isRegister(self) -> bool:
+        return False
 
 class BindingRegister(Binding):
     def __init__(self, var: str, reg: str) -> None:
@@ -10,6 +16,9 @@ class BindingRegister(Binding):
 
     def value(self) -> str:
         return self.reg
+
+    def isRegister(self) -> bool:
+        return True
 
 class BindingEnclosed(Binding):
     def __init__(self, var: str, n: str) -> None:
@@ -26,13 +35,18 @@ class Env:
 
     # BRegister(Reg)
     def bindRegister(self, var: str, reg: str) -> str:
-        self.elements[var] = BindingRegister(var, reg)
-        return reg
+        binding = BindingRegister(var, reg)
+        self.elements[var] = binding
+        return binding
+
+    def unbindRegister(self, var: str) -> None:
+        del self.elements[var]
 
     # BEnclosed(Int)
     def bindEnclosed(self, var: str, n: int) -> int:
-        self.elements[var] = BindingEnclosed(var, n)
-        return n
+        binding = BindingEnclosed(var, n)
+        self.elements[var] = binding
+        return binding
 
     def exists(self, name: str) -> bool:
         return name in self.elements

@@ -36,9 +36,9 @@ def parseString(s: str) -> List:
 def isNotEmptyList(expr: List) -> bool:
     return isinstance(expr, list) and len(expr) > 0
 
-def createExprConstructor(exprApplyList: List) -> Tuple[int, Optional[List]]:
+def getExprConstructor(exprApplyList: List) -> Tuple[int, Optional[List]]:
     if isNotEmptyList(exprApplyList) and len(exprApplyList) == 3:
-        dep, cons = createExprConstructor(exprApplyList[1])
+        dep, cons = getExprConstructor(exprApplyList[1])
         return 1 + dep, cons
     if exprApplyList[0] == "ExprConstructor":
         return 0, exprApplyList
