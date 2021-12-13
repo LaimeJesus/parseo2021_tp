@@ -101,7 +101,6 @@ class FlechaCompiler:
         insE1 = self.compileExpression(exp[2], env, tmp)
         env.bindRegister(name, tmp)
         insE2 = self.compileExpression(exp[3], env, reg)
-        env.unbindRegister(name)
         return insE1 + insE2
 
     def compileLambda(self, exp: List, env: Env, reg: str) -> List[Instruction]:
