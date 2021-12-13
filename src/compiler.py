@@ -59,7 +59,6 @@ class FlechaCompiler:
             Store(reg, 0, tmp), # slot 0 tag
             MovInt(tmp, value),
             Store(reg, 1, tmp), # slot 1 char
-            # Load(reg, reg0, 1),
         ]
 
     def compileNumber(self, exp: List, env: Env, reg: str) -> List[Instruction]:
@@ -90,19 +89,6 @@ class FlechaCompiler:
         tag = self.tag("Char")
         slots = tag.size
         bindingValue = env.get(name)
-        if name == "unsafePrintChar":
-            reg2 = f"{reg}_"
-            return [
-                MovReg(reg, bindingValue.value()),
-                Load(reg2, reg, 1),
-                PrintChar(reg2),
-                MovReg(reg, bindingValue.value()),
-            ]
-        if name == "unsafePrintInt":
-            return [
-                Print(reg)
-            ]
-
         reg0 = "$r0"
         tmp = "$t"
         return [
@@ -154,11 +140,21 @@ class FlechaCompiler:
         elif isExprVar(exp[1]):
             r0 = self.env.fresh()
             r1 = self.env.fresh()
+            varName = exp[1][1]
+            if varName == "unsafePrintChar":
+                varIns = [
+                    Load(r1, r0, 1),
+                    PrintChar(r1),
+                ]
+            elif varName == "unsafePrintInt":
+                varIns = [
+                    Load(r1, r0, 1),
+                    Print(r1),
+                ]
+            else:
+                varIns = self.compileVar(exp[1], env, r0)
             ins = self.compileExpression(exp[2], env, r0)
-            ins += [
-                Load(r1, r0, 1),
-                PrintChar(r1)
-            ]
+            ins += varIns
         else:
             res = "$r"
             reg1 = "$r1"
