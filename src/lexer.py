@@ -103,3 +103,6 @@ class FlechaLexer(Lexer):
     def error(self, t):
         print("Illegal character '%s'" % t.value[0])
         self.index += 1
+
+    def tokenize(self, s: str) -> Lexer.tokenize:
+        return super().tokenize(s)

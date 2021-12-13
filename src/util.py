@@ -1,14 +1,6 @@
+from typing import List
 
-def parseParametros(parametros, expresion=None):
-    tail = expresion.ast() if expresion is not None else []
-
-    if not parametros or parametros.isEmpty():
-        return [tail]
-    for parametro in reversed(parametros):
-        tail = ["ExprLambda", parametro.ast(), tail]
-    return tail
-
-def parseSpecialChar(char):
+def parseSpecialChar(char: str) -> int:
     charList = list(char)
     character = charList[1]
     if character == "t":
@@ -21,7 +13,7 @@ def parseSpecialChar(char):
         parsed = ord(character)
     return parsed
 
-def parseString(s):
+def parseString(s: str) -> List:
     resultList = []
     if len(s) == 1:
         resultList = [ord(s)]

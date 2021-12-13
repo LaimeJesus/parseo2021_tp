@@ -1,8 +1,11 @@
+import traceback
+
 from sys import argv
 
 from .lexer import FlechaLexer
 from .parser import FlechaParser
 from .serializer import FlechaSerializer
+
 
 if __name__ == '__main__':
 
@@ -28,3 +31,4 @@ if __name__ == '__main__':
         print(serialized)
     except Exception as e:
         print(e)
+        print(traceback.format_exc())
