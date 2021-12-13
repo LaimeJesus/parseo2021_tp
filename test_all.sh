@@ -23,5 +23,5 @@ tests=(
 )
 
 for test in "${tests[@]}"; do
-    bash "test_single.sh" $test
+    bash "test_parser.sh" $test
 done
