@@ -1,7 +1,10 @@
+import json
 import traceback
 
 from sys import argv
 
+from .compiler import FlechaCompiler
+from .env import Env
 from .lexer import FlechaLexer
 from .parser import FlechaParser
 from .serializer import FlechaSerializer
@@ -24,11 +27,17 @@ if __name__ == '__main__':
         lexer = FlechaLexer()
         parser = FlechaParser()
         serializer = FlechaSerializer()
+        compiler = FlechaCompiler()
+        env = Env()
+        reg = "$main"
         tokenized = lexer.tokenize(inputData)
         parsed = parser.parse(tokenized)
         ast = parsed.ast()
         serialized = serializer.serializeProgram(ast)
-        print(serialized)
+        exps = json.loads(serialized)
+        insList = compiler.compile(exps, env, reg)
+        for ins in insList:
+            print(ins)
     except Exception as e:
         print(e)
         print(traceback.format_exc())

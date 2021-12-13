@@ -1,8 +1,13 @@
+import traceback
+
+from sys import argv
+
 from sly import Parser
 
-from .lexer import FlechaLexer
-
 from .ast import Expr, ExprApply, ExprAtomic, ExprBinOp, ExprCase, ExprCaseBranch, ExprCases, ExprChar, ExprCons, ExprDefinition, ExprEmpty, ExprExpr, ExprIfThen, ExprLambda, ExprLet, ExprNumber, ExprOp, ExprParams, ExprProgram, ExprSequence, ExprString, ExprUnOp, ExprVar
+
+from .lexer import FlechaLexer
+from .serializer import FlechaSerializer
 
 class FlechaParser(Parser):
     # debugfile = 'parser.out'
@@ -159,3 +164,30 @@ class FlechaParser(Parser):
 
     def parse(self, tokenized) -> Expr:
         return super().parse(tokenized)
+
+
+if __name__ == '__main__':
+
+    '''
+    python -m src.parser tests_parser/test00.input
+    '''
+
+    try:
+        if len(argv) < 2:
+            raise Exception("Pass a filename as argument")
+
+        inputFile = argv[1]
+        with open(inputFile, 'r') as inputContent:
+            inputData = inputContent.read()
+
+        lexer = FlechaLexer()
+        parser = FlechaParser()
+        serializer = FlechaSerializer()
+        tokenized = lexer.tokenize(inputData)
+        parsed = parser.parse(tokenized)
+        ast = parsed.ast()
+        serialized = serializer.serializeProgram(ast)
+        print(serialized)
+    except Exception as e:
+        print(e)
+        print(traceback.format_exc())
