@@ -8,11 +8,17 @@ Este repositorio contiene los siguientes archivos
 
 - `lexer.py`: lexer de Flecha
 - `parser.py`: parser de Flecha
+- `ast.py`: ast de Flecha
 - `serializer.py`: serializador de Flecha
+- `compiler.py`: compilador de Flecha a Mamarracho
+- `env.py`: entorno de variables
+- `instructions.py`: instrucciones de compilación
 - `main.py`: parsea e imprime un ast del programa Flecha
 - los scripts:
-    - `test_single.sh`, ejecuta el parser con un archivo de prueba dentro de la carpeta `tests_parser` y compara su salida
-    - `test_all.sh`, ejecuta el parser con todos los archivos de prueba de la carpeta `tests_parser`
+    - `test_parser.sh`, ejecuta el parser con un archivo de prueba dentro de la carpeta `tests_parser` y compara su salida
+    - `test_all_parser.sh`, ejecuta el parser con todos los archivos de prueba de la carpeta `tests_parser`
+    - `test_compiler.sh`, ejecuta el compilador con un archivo de prueba dentro de la carpeta `test_codegen_v2/test_codegen` y compara su salida
+    - `test_all_compiler.sh`, ejecuta el compilador con todos los archivos de prueba de la carpeta `test_codegen_v2/test_codegen`
 
 ## Instalación
 
@@ -30,7 +36,7 @@ Finalmente instalamos las dependencias
 
 Se pueden utilizar los scripts generados para realizar las pruebas del parser, por ejemplo:
 Probar todos los casos de prueba.
-- `./test_all.sh`
+- `./test_all_parser.sh` o `./test_all_compiler.sh`
 
 O, usando main.py
 - `python -m src.main tests_parser/test00.input`
