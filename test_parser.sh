@@ -8,7 +8,7 @@ EXPECTED_NAME="${BASE}${TARGET}.expected"
 
 echo ".....testing $INPUT_NAME"
 
-python -m src.main $INPUT_NAME > $OUTPUT_NAME
+python -m src.parser $INPUT_NAME > $OUTPUT_NAME
 
 diff "$OUTPUT_NAME" "$EXPECTED_NAME"
 
