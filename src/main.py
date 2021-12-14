@@ -28,13 +28,14 @@ if __name__ == '__main__':
         parser = FlechaParser()
         serializer = FlechaSerializer()
         compiler = FlechaCompiler()
-        env = Env()
-        reg = "$main"
         tokenized = lexer.tokenize(inputData)
         parsed = parser.parse(tokenized)
         ast = parsed.ast()
         serialized = serializer.serializeProgram(ast)
+        print(serialized)
         exps = json.loads(serialized)
+        env = Env()
+        reg = "$main"
         insList = compiler.compile(exps, env, reg)
         for ins in insList:
             print(ins)

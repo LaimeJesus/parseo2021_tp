@@ -4,11 +4,9 @@ import traceback
 from sys import argv
 from typing import List
 
-from .env import Env
-from .instructions import Alloc, ICall, Instruction, Load, MovInt, MovLabel, MovReg, Print, PrintChar, Return, Store
+from .env import Binding, Env
+from .instructions import Alloc, ICall, Instruction, Jump, JumpEq, Load, MovInt, MovLabel, MovReg, Print, PrintChar, Return, Store
 from .util import isExprConstructor, isExprDef, isExprVar, getExprConstructor
-
-routines: int = 0
 
 class Tag:
     def __init__(self, tag: int, size: int = 1) -> None:
@@ -31,6 +29,13 @@ class FlechaCompiler:
             "Cons": Tag(7, 3),
         }
         self.lastId = 7
+        self.lastRoutine = 0
+        self.lastLabel = 0
+
+    def freshLabel(self):
+        self.lastLabel += 1
+        label = self.lastLabel
+        return f"Label_{label}"
 
     def tag(self, name: str, size: int = 1) -> Tag:
         if name not in self.tags:
@@ -43,22 +48,22 @@ class FlechaCompiler:
         name = exp[1]
         defReg = env.get(name).value
         r0 = env.fresh()
+        base = [f"{name}:", MovLabel(defReg, name)]
         expIns = self.compileExpression(exp[2], env, r0)
-        return [
-            f"{name}:",
-            MovLabel(defReg, name)
-        ] + expIns + [MovReg(defReg, r0)]
+        return base + expIns + [MovReg(defReg, r0)]
 
     def compileTagCharOrNumber(self, tag: Tag, exp: List, env: Env, reg: str) -> List[Instruction]:
         value = exp[1]
         slots = tag.size
         tmp = env.fresh()
+        r0 = env.fresh()
         return [
-            Alloc(reg, slots),
+            Alloc(r0, slots),
             MovInt(tmp, tag.tag),
-            Store(reg, 0, tmp), # slot 0 tag
+            Store(r0, 0, tmp),
             MovInt(tmp, value),
-            Store(reg, 1, tmp), # slot 1 char
+            Store(r0, 1, tmp),
+            MovReg(reg, r0),
         ]
 
     def compileNumber(self, exp: List, env: Env, reg: str) -> List[Instruction]:
@@ -71,14 +76,16 @@ class FlechaCompiler:
 
     def compileConstructor(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         value = exp[1]
-        r0 = env.fresh()
         tmp = env.fresh()
-        tag = self.tag(value)
+        r0 = env.fresh()
+        t = self.tag(value)
+        tag = t.tag
         slots = tag.size
         return [
             Alloc(r0, slots),
             MovInt(tmp, tag),
-            Store(r0, 0, tmp)
+            Store(r0, 0, tmp),
+            MovReg(reg, r0),
         ]
 
     def compileVar(self, exp: List, env: Env, reg: str) -> List[Instruction]:
@@ -98,62 +105,83 @@ class FlechaCompiler:
         else:
             bindingValue = env.get(name)
             r0 = bindingValue.value
-            if bindingValue.isRegister():
-                return [
-                    MovReg(reg, r0)
-                ]
-            else:
-                return []
+            return [MovReg(reg, r0)]
 
     def compileCase(self, exp: List, env: Env, reg: str) -> List[Instruction]:
-        pass
+        val = env.fresh()
+        tagReg = env.fresh()
+        test = env.fresh()
+        label = self.freshLabel()
+        endLabel = f"FIN_CASE_{label}" 
+
+        ins = self.compileExpression(exp[1], env, val)
+        ins += [Load(tagReg, val, 0)]
+        for id, branch in enumerate(exp[2]):
+            branchName = f"RAMA_{str(id)}_{label}"
+            ins += [
+                MovInt(test, id),
+                JumpEq(tagReg, test, branchName),
+            ]
+        for id, branch in enumerate(exp[2]):
+            branchName = f"RAMA_{str(id)}_{label}"
+            ins += [f"{branchName}:"]
+            ins += self.compileCaseBranch(branch, env, val)
+            ins += [Jump(endLabel)]
+        ins += [f"{endLabel}:"]
+        return ins
+
+    def compileCaseBranch(self, exp: List, env: Env, reg: str) -> List[Instruction]:
+        consName = exp[1] # usar params size
+        olds: Binding = []
+        regs: str = []
+        ins = []
+        for id, param in enumerate(exp[2]): # chequear args size
+            tmp = env.fresh()
+            regs += [tmp]
+            if env.exists(param):
+                olds += [env.get(param)]
+            env.bindRegister(param, tmp)
+            ins += [Load(tmp, reg, id)]
+        ins += self.compileExpression(exp[3], env, reg)
+        for old in olds:
+            env.bindRegister(old.name, old.value)
+        return ins
 
     def compileLet(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         name = exp[1]
         tmp = env.fresh()
         insE1 = self.compileExpression(exp[2], env, tmp)
-        oldBinding = None
-        if env.exists(name):
-            oldBinding = env.get(name)
-        env.bindRegister(name, tmp)
-        insE2 = self.compileExpression(exp[3], env, reg)
-        env.unbindRegister(name)
-        if oldBinding:
-            env.bindRegister(oldBinding.name, oldBinding.value)
+        insE2 = self.compileExpressionWithNewScope(exp[3], env, reg, name, tmp)
+
         return insE1 + insE2
 
     def compileLambda(self, exp: List, env: Env, reg: str) -> List[Instruction]:
-        global routines
-        routines += 1
         name = exp[1]
         fun = env.fresh()
         arg = env.fresh()
         res = env.fresh()
-        oldBinding = None
-        if env.exists(name):
-            oldBinding = env.get(name)
-        env.bindRegister(name, arg)
-        expBody = self.compileExpression(exp[2], env, res)
-        env.unbindRegister(name)
-        if oldBinding:
-            env.bindRegister(oldBinding.name, oldBinding.value)
-        label = f"rti_{str(routines)}"
+        r0 = env.fresh()
+        t = env.fresh()
+
+        expBody = self.compileExpressionWithNewScope(exp[2], env, res, name, arg)
+
+        label = f"rtn_{str(self.lastRoutine)}"
+        self.lastRoutine += 1
         ins = [
             f"{label}:",
             MovReg(fun, "@fun"),
             MovReg(arg, "@arg")
         ]
-        ins += expBody
-        r0 = env.fresh()
-        t = env.fresh()
-        paramSize = 1
+        # TODO buscar las variables libres del scope y guardarlas como enclosed binding
+        paramSize = 5
         ins += [
             Alloc(r0, paramSize + 2),
-            MovInt(t, 3), # tag clausura = 3
+            MovInt(t, 3),
             Store(r0, 0, t),
             MovLabel(t, label),
             Store(r0, 1, t),
         ]
+        ins += expBody
         ins += [
             MovReg("@res", res),
             Return()
@@ -163,12 +191,16 @@ class FlechaCompiler:
 
     def compileApplyCons(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         paramSize, expCons = getExprConstructor(exp)
+        name = expCons[1]
+        self.tag(name, paramSize)
+
         regs = []
         for _ in range(paramSize + 1):
             regs += env.fresh()
-        name = expCons[1]
-        self.tag(name, paramSize)
-        constructorIns = self.compileExpression(expCons, env, regs[0])
+        res = regs[0]
+
+        constructorIns = self.compileExpression(expCons, env, res)
+
         instructions = []
         curr = 1
         currExp = exp
@@ -178,17 +210,19 @@ class FlechaCompiler:
             currExp = currExp[1]
             curr += 1
         instructions += constructorIns
+
         curr = 0
-        res = "$r"
         while curr < paramSize:
             instructions += [Store(res, curr, regs[curr])]
             curr += 1
+
         return instructions
 
     def compileApply(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         if isExprConstructor(exp[1]):
             ins = self.compileApplyCons(exp, env, reg)
         elif isExprVar(exp[1]):
+
             insExp1 = self.compileVar(exp[1], env, reg)
             insExp2 = self.compileExpression(exp[2], env, reg)
             ins = insExp2 + insExp1
@@ -197,9 +231,9 @@ class FlechaCompiler:
             reg2 = env.fresh()
             reg3 = env.fresh()
             res = env.fresh()
-            insExp1 = self.compileExpression(exp[1], env, reg1)
-            insExp2 = self.compileExpression(exp[2], env, reg2)
-            ins = insExp1 + insExp2
+            ins = []
+            ins += self.compileExpression(exp[1], env, reg1)
+            ins += self.compileExpression(exp[2], env, reg2)
             ins += [
                 Load(reg3, reg1, 1),
                 MovReg("@fun", reg1),
@@ -209,10 +243,20 @@ class FlechaCompiler:
             ]
         return ins
 
-    def compileCaseBranch(self, exp: List, env: Env, reg: str) -> List[Instruction]:
-        pass
+    # agrega nueva var a scope guardando la anterior si existiera
+    def compileExpressionWithNewScope(self, exp: List, env: Env, reg: str, newName: str, newReg: str) -> List[Instruction]:
+        oldBinding = None
+        if env.exists(newName):
+            oldBinding = env.get(newName)
+        env.bindRegister(newName, newReg)
 
-    # compileExpresion :: Env -> Expr -> Reg -> [Instruccion]
+        expBody = self.compileExpression(exp, env, reg)
+
+        env.unbindRegister(newName)
+        if oldBinding:
+            env.bindRegister(oldBinding.name, oldBinding.value)
+        return expBody
+
     def compileExpression(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         expName = exp[0]
         if expName == "Def":
@@ -227,14 +271,14 @@ class FlechaCompiler:
             return self.compileChar(exp, env, reg)
         elif expName == "ExprCase":
             return self.compileCase(exp, env, reg)
+        elif expName == "CaseBranch":
+            return self.compileCaseBranch(exp, env, reg)
         elif expName == "ExprLet":
             return self.compileLet(exp, env, reg)
         elif expName == "ExprLambda":
             return self.compileLambda(exp, env, reg)
         elif expName == "ExprApply":
             return self.compileApply(exp, env, reg)
-        elif expName == "CaseBranch":
-            return self.compileCaseBranch(exp, env, reg)
 
     def registerDefinitions(self, exps: List, env: Env) -> None:
         for exp in exps:
@@ -243,7 +287,6 @@ class FlechaCompiler:
                 reg = f"@G_{definition}"
                 env.bindRegister(definition, reg)
 
-    # compile :: Env -> [Expr] -> Reg -> [Instruccion]
     def compileExpressions(self, exps: List, env: Env, reg: str) -> List[Instruction]:
         instructions = []
         self.registerDefinitions(exps, env)

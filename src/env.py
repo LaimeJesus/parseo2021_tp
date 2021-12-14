@@ -10,6 +10,9 @@ class Binding:
     def isRegister(self) -> bool:
         return False
 
+    def __repr__(self) -> str:
+        return str(self.value)
+
 class BindingRegister(Binding):
     def isRegister(self) -> bool:
         return True
