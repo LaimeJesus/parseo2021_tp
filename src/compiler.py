@@ -8,6 +8,8 @@ from .env import Env
 from .instructions import Alloc, ICall, Instruction, Load, MovInt, MovLabel, MovReg, Print, PrintChar, Return, Store
 from .util import isExprConstructor, isExprDef, isExprVar, getExprConstructor
 
+routines: int = 0
+
 class Tag:
     def __init__(self, tag: int, size: int = 1) -> None:
         self.tag = tag
@@ -39,15 +41,13 @@ class FlechaCompiler:
 
     def compileDef(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         name = exp[1]
-        defReg = env.get(name).value()
+        defReg = env.get(name).value
         r0 = env.fresh()
         expIns = self.compileExpression(exp[2], env, r0)
         return [
             f"{name}:",
             MovLabel(defReg, name)
-        ] + expIns + [
-            MovReg(defReg, r0),
-        ]
+        ] + expIns + [MovReg(defReg, r0)]
 
     def compileTagCharOrNumber(self, tag: Tag, exp: List, env: Env, reg: str) -> List[Instruction]:
         value = exp[1]
@@ -83,14 +83,27 @@ class FlechaCompiler:
 
     def compileVar(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         name = exp[1]
-        bindingValue = env.get(name)
-        r0 = bindingValue.value()
-        if bindingValue.isRegister():
+        if name == "unsafePrintChar":
+            r1 = self.env.fresh()
             return [
-                MovReg(reg, r0)
+                Load(r1, reg, 1),
+                PrintChar(r1),
+            ]
+        elif name == "unsafePrintInt":
+            r1 = self.env.fresh()
+            return [
+                Load(r1, reg, 1),
+                Print(r1),
             ]
         else:
-            return []
+            bindingValue = env.get(name)
+            r0 = bindingValue.value
+            if bindingValue.isRegister():
+                return [
+                    MovReg(reg, r0)
+                ]
+            else:
+                return []
 
     def compileCase(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         pass
@@ -99,14 +112,55 @@ class FlechaCompiler:
         name = exp[1]
         tmp = env.fresh()
         insE1 = self.compileExpression(exp[2], env, tmp)
+        oldBinding = None
+        if env.exists(name):
+            oldBinding = env.get(name)
         env.bindRegister(name, tmp)
         insE2 = self.compileExpression(exp[3], env, reg)
+        env.unbindRegister(name)
+        if oldBinding:
+            env.bindRegister(oldBinding.name, oldBinding.value)
         return insE1 + insE2
 
     def compileLambda(self, exp: List, env: Env, reg: str) -> List[Instruction]:
-        pass
+        global routines
+        routines += 1
+        name = exp[1]
+        fun = env.fresh()
+        arg = env.fresh()
+        res = env.fresh()
+        oldBinding = None
+        if env.exists(name):
+            oldBinding = env.get(name)
+        env.bindRegister(name, arg)
+        expBody = self.compileExpression(exp[2], env, res)
+        env.unbindRegister(name)
+        if oldBinding:
+            env.bindRegister(oldBinding.name, oldBinding.value)
+        label = f"rti_{str(routines)}"
+        ins = [
+            f"{label}:",
+            MovReg(fun, "@fun"),
+            MovReg(arg, "@arg")
+        ]
+        ins += expBody
+        r0 = env.fresh()
+        t = env.fresh()
+        paramSize = 1
+        ins += [
+            Alloc(r0, paramSize + 2),
+            MovInt(t, 3), # tag clausura = 3
+            Store(r0, 0, t),
+            MovLabel(t, label),
+            Store(r0, 1, t),
+        ]
+        ins += [
+            MovReg("@res", res),
+            Return()
+        ]
+        return ins
 
-    # tiene un costructor al final en exp[1]
+
     def compileApplyCons(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         paramSize, expCons = getExprConstructor(exp)
         regs = []
@@ -132,34 +186,19 @@ class FlechaCompiler:
         return instructions
 
     def compileApply(self, exp: List, env: Env, reg: str) -> List[Instruction]:
-        name = exp[0]
         if isExprConstructor(exp[1]):
             ins = self.compileApplyCons(exp, env, reg)
         elif isExprVar(exp[1]):
-            r0 = self.env.fresh()
-            r1 = self.env.fresh()
-            varName = exp[1][1]
-            if varName == "unsafePrintChar":
-                varIns = [
-                    Load(r1, r0, 1),
-                    PrintChar(r1),
-                ]
-            elif varName == "unsafePrintInt":
-                varIns = [
-                    Load(r1, r0, 1),
-                    Print(r1),
-                ]
-            else:
-                varIns = self.compileVar(exp[1], env, r0)
-            ins = self.compileExpression(exp[2], env, r0)
-            ins += varIns
+            insExp1 = self.compileVar(exp[1], env, reg)
+            insExp2 = self.compileExpression(exp[2], env, reg)
+            ins = insExp2 + insExp1
         else:
-            res = "$r"
-            reg1 = "$r1"
-            reg2 = "$r2"
-            reg3 = "$r3"
+            reg1 = env.fresh()
+            reg2 = env.fresh()
+            reg3 = env.fresh()
+            res = env.fresh()
             insExp1 = self.compileExpression(exp[1], env, reg1)
-            insExp2 = self.compileExpression(exp[1], env, reg2)
+            insExp2 = self.compileExpression(exp[2], env, reg2)
             ins = insExp1 + insExp2
             ins += [
                 Load(reg3, reg1, 1),
@@ -201,7 +240,7 @@ class FlechaCompiler:
         for exp in exps:
             if isExprDef(exp):
                 definition = exp[1]
-                reg = f"@_{definition}"
+                reg = f"@G_{definition}"
                 env.bindRegister(definition, reg)
 
     # compile :: Env -> [Expr] -> Reg -> [Instruccion]

@@ -3,30 +3,19 @@ from sys import flags
 
 
 class Binding:
-    def value(self) -> str:
-        raise Exception("Metodo Abstracto")
+    def __init__(self, name: str, value: str) -> None:
+        self.name = name
+        self.value = value
 
     def isRegister(self) -> bool:
         return False
 
 class BindingRegister(Binding):
-    def __init__(self, var: str, reg: str) -> None:
-        self.var = var
-        self.reg = reg
-
-    def value(self) -> str:
-        return self.reg
-
     def isRegister(self) -> bool:
         return True
 
 class BindingEnclosed(Binding):
-    def __init__(self, var: str, n: str) -> None:
-        self.var = var
-        self.index = n
-
-    def value(self) -> str:
-        return str(self.index)
+    pass
 
 class Env:
     def __init__(self) -> None:
@@ -54,7 +43,7 @@ class Env:
     def get(self, name: str) -> Binding:
         if self.exists(name):
             return self.elements[name]
-        raise Exception("No existe {name} en entorno")
+        raise Exception(f"No existe {name} en entorno")
 
     def fresh(self):
         self.lastReg += 1
