@@ -26,11 +26,11 @@ class BindingEnclosed(Binding):
         return False
 
 class Env:
-    def __init__(self) -> None:
-        self.elements = {}
-        self.lastReg = 0
-        self.globals = []
+    def __init__(self, elements = {}, globals = []) -> None:
+        self.elements = elements
+        self.globals = globals
         self.primitives = ['unsafePrintInt', 'unsafePrintChar']
+        self.lastReg = 0
 
     # BRegister(Reg)
     def bindRegister(self, var: str, reg: str) -> str:

@@ -57,3 +57,6 @@ def isExprVar(expr: List) -> bool:
 
 def isExprDef(expr: List) -> bool:
     return isNotEmptyList(expr) and expr[0] == "Def"
+
+def isExprLambda(expr: List) -> bool:
+    return isNotEmptyList(expr) and expr[0] == "ExprLambda"
