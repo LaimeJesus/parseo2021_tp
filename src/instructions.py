@@ -135,3 +135,10 @@ class ICall(Instruction):
 class Return(Instruction):
     def __repr__(self) -> str:
         return f"return()"
+
+class Comment(Instruction):
+    def __init__(self, msg: str) -> None:
+        self.msg = msg
+
+    def __repr__(self) -> str:
+        return f"%% {self.msg}"
