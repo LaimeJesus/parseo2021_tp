@@ -18,23 +18,31 @@ class BindingRegister(Binding):
         return True
 
 class BindingEnclosed(Binding):
-    pass
+    def __init__(self, name: str, value: int) -> None:
+        self.name = name
+        self.value = value
+
+    def isRegister(self) -> bool:
+        return False
 
 class Env:
     def __init__(self) -> None:
         self.elements = {}
         self.lastReg = 0
+        self.globals = []
+        self.primitives = ['unsafePrintInt', 'unsafePrintChar']
 
     # BRegister(Reg)
     def bindRegister(self, var: str, reg: str) -> str:
         binding = BindingRegister(var, reg)
         self.elements[var] = binding
+        if '@' == var[0]:
+            self.globals += var[0]
         return binding
 
     def unbindRegister(self, var: str) -> None:
         del self.elements[var]
 
-    # BEnclosed(Int)
     def bindEnclosed(self, var: str, n: int) -> int:
         binding = BindingEnclosed(var, n)
         self.elements[var] = binding
@@ -52,3 +60,9 @@ class Env:
         self.lastReg += 1
         reg = self.lastReg
         return f"$r{reg}"
+
+    def isGlobal(self, var: str) -> bool:
+        return var in self.globals
+
+    def isPrimitive(self, var: str) -> bool:
+        return var in self.primitives

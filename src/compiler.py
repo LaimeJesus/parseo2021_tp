@@ -2,7 +2,7 @@ import json
 import traceback
 
 from sys import argv
-from typing import List
+from typing import List, Set
 
 from .env import Binding, Env
 from .instructions import Alloc, Comment, ICall, Instruction, Jump, JumpEq, Load, MovInt, MovLabel, MovReg, Print, PrintChar, Return, Store
@@ -48,7 +48,11 @@ class FlechaCompiler:
         name = exp[1]
         defReg = env.get(name).value
         r0 = env.fresh()
-        base = [f"{name}:", MovLabel(defReg, name)]
+        base = [
+            Comment(f"DEF {name} en {defReg}"),
+            f"{name}:",
+            MovLabel(defReg, name)
+        ]
         expIns = self.compileExpression(exp[2], env, r0)
         return base + expIns + [MovReg(defReg, r0)]
 
@@ -58,14 +62,14 @@ class FlechaCompiler:
         tmp = env.fresh()
         r0 = env.fresh()
         return [
-            # Comment(f"COMPILE CHARorNumber START, {r0}:=VPTR({slots})"),
+            Comment(f"COMPILE CHARorNumber START, {r0}:=VPTR({slots})"),
             Alloc(r0, slots),
             MovInt(tmp, tag.tag),
             Store(r0, 0, tmp),
             MovInt(tmp, value),
             Store(r0, 1, tmp),
             MovReg(reg, r0),
-            # Comment(f"COMPILE CHARorNumber END, {reg}:={r0}"),
+            Comment(f"COMPILE CHARorNumber END, {reg}:={r0}"),
         ]
 
     def compileNumber(self, exp: List, env: Env, reg: str) -> List[Instruction]:
@@ -92,7 +96,7 @@ class FlechaCompiler:
 
     def compileVar(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         name = exp[1]
-        if name in ["unsafePrintChar", "unsafePrintInt"]:
+        if env.isPrimitive(name):
             r1 = env.fresh()
             ins = [Load(r1, reg, 1)]
             if name == "unsafePrintChar":
@@ -102,8 +106,16 @@ class FlechaCompiler:
             return ins
         else:
             bindingValue = env.get(name)
-            r0 = bindingValue.value
-            return [MovReg(reg, r0)]
+            ins = []
+            if bindingValue.isRegister():
+                r0 = bindingValue.value
+                ins += [Comment(f"COMPILE VAR REG: {reg} := {r0}")]
+                ins += [MovReg(reg, r0)]
+            else:
+                r0 = bindingValue.value
+                ins += [Comment(f"COMPILE VAR ENCLOS: {reg} := {r0}")]
+                ins += [Load(reg, "$fun", r0 + 2)]
+            return ins
 
     def compileCase(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         val = env.fresh()
@@ -160,39 +172,92 @@ class FlechaCompiler:
         label = f"rtn_{str(self.lastRoutine)}"
         self.lastRoutine += 1
 
+        oldBinding = None
+        if env.exists(name):
+            oldBinding = env.get(name)
+        env.bindRegister(name, arg)
+
+        currVars = []
+        self.freeVars(exp, env, currVars)
+
         routine = [
             f"{label}:",
             MovReg(fun, "@fun"),
             MovReg(arg, "@arg"),
         ]
-        routine += self.compileExpressionWithNewScope(exp, env, res, name, arg)
+        # routine += self.compileExpressionWithNewScope(exp, env, res, name, arg)
+        routine += self.compileExpression(exp, env, res)
         routine += [
             MovReg("@res", res),
             Return(),
         ]
-        return label, routine
+        env.unbindRegister(name)
+        if oldBinding:
+            env.bindRegister(oldBinding.name, oldBinding.value)
+
+        return label, routine, currVars
+
+    def freeVars(self, exp: List, env: Env, vars: List[str]) -> int:
+        expName = exp[0]
+        # oldVars = []
+        if expName == "ExprVar":
+            var = exp[1]
+            if not env.isGlobal(var) and not env.isPrimitive(var) and not env.exists(var):
+                env.bindEnclosed(var, len(vars))
+                vars += var
+        elif expName in ["ExprConstructor", "ExprNumber", "ExprChar"]:
+            vars
+        elif expName == "CaseBranch":
+            vars
+        elif expName == "ExprLet":
+            self.freeVars(exp[2], env, vars)
+            # var = exp[1]
+            # if not env.isGlobal(var) and not env.isPrimitive(var) and not env.exists(var):
+            #     env.bindEnclosed(var, len(vars))
+            #     vars += var
+            self.freeVars(exp[3], env, vars)
+        elif expName == "ExprLambda":
+            var = exp[1]
+            # if not env.isGlobal(var) and not env.isPrimitive(var) and not env.exists(var):
+            #     env.bindEnclosed(var, len(vars))
+            #     vars += var
+            self.freeVars(exp[2], env, vars)
+        elif expName == "ExprApply":
+            self.freeVars(exp[1], env, vars)
+            self.freeVars(exp[2], env, vars)
 
     def compileLambda(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         name = exp[1]
         r0 = env.fresh()
         t = env.fresh()
 
-        label, routine = self.compileRoutine(exp[2], env, name)
+        label, routine, freeVars = self.compileRoutine(exp[2], env, name)
         self.lambdas += routine
 
-        # TODO buscar las variables libres del scope y guardarlas como enclosed binding
-        paramSize = 1
+        # filteredVars = currVars - set(env.elements.values())
+        # filteredVars = filteredVars - set(['unsafePrintChar', 'unsafePrintInt', '_'])
+        paramSize = len(freeVars)
         ins = [
-            # Comment(f"RESERVAR START {paramSize}:"),
+            Comment(f"compileLambda START {name} {paramSize}:"),
+            Comment(f"compileLambda freeVars {freeVars}"),
             Alloc(r0, paramSize + 2),
             MovInt(t, 3),
             Store(r0, 0, t),
             MovLabel(t, label),
             Store(r0, 1, t),
-            MovReg(reg, r0),
-            # Comment(f"RESERVAR END {paramSize}:"),
         ]
-        return ins
+        for ind, var in enumerate(freeVars):
+            fresh = env.fresh()
+            ins += [
+                Comment(f"freevar: {var} en pos: {ind + 2}"),
+                MovReg(t, fresh),
+                Store(r0, ind + 2, t),
+            ]
+
+        return ins + [
+            Comment(f"compileLambda END {name} {paramSize}:"),
+            MovReg(reg, r0)
+        ]
 
 
     def compileApplyCons(self, exp: List, env: Env, reg: str) -> List[Instruction]:
@@ -301,8 +366,7 @@ class FlechaCompiler:
         reg = "$main"
         self.registerDefinitions(exps, env)
         for exp in exps:
-            res = self.compileExpression(exp, env, reg)
-            instructions += res
+            instructions += self.compileExpression(exp, env, reg)
         return [Jump("main")] + self.lambdas + instructions
 
 if __name__ == '__main__':
