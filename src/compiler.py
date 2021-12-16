@@ -354,20 +354,24 @@ class FlechaCompiler:
             return self.compileApply(exp, env, reg)
 
     def registerDefinitions(self, exps: List, env: Env) -> None:
+        firstDefinition = None
         for exp in exps:
             if isExprDef(exp):
                 definition = exp[1]
                 reg = f"@G_{definition}"
                 env.bindRegister(definition, reg)
+                if not firstDefinition:
+                    firstDefinition = definition
+        return firstDefinition
 
     def compileExpressions(self, exps: List) -> List[Instruction]:
         instructions = []
         env = Env()
         reg = "$main"
-        self.registerDefinitions(exps, env)
+        firstDefinition = self.registerDefinitions(exps, env)
         for exp in exps:
             instructions += self.compileExpression(exp, env, reg)
-        return [Jump("main")] + self.lambdas + instructions
+        return [Jump(firstDefinition)] + self.lambdas + instructions
 
 if __name__ == '__main__':
 
