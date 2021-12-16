@@ -30,6 +30,7 @@ class FlechaCompiler:
         self.lastId = 7
         self.lastRoutine = 0
         self.lastLabel = 0
+        self.lambdas = []
 
     def freshLabel(self):
         self.lastLabel += 1
@@ -57,12 +58,14 @@ class FlechaCompiler:
         tmp = env.fresh()
         r0 = env.fresh()
         return [
+            # Comment(f"COMPILE CHARorNumber START, {r0}:=VPTR({slots})"),
             Alloc(r0, slots),
             MovInt(tmp, tag.tag),
             Store(r0, 0, tmp),
             MovInt(tmp, value),
             Store(r0, 1, tmp),
             MovReg(reg, r0),
+            # Comment(f"COMPILE CHARorNumber END, {reg}:={r0}"),
         ]
 
     def compileNumber(self, exp: List, env: Env, reg: str) -> List[Instruction]:
@@ -150,36 +153,44 @@ class FlechaCompiler:
         insE2 = self.compileExpressionWithNewScope(exp[3], env, reg, name, tmp)
         return insE1 + insE2
 
-    def compileLambda(self, exp: List, env: Env, reg: str) -> List[Instruction]:
-        name = exp[1]
+    def compileRoutine(self, exp: List, env: Env, name: str) -> List:
         fun = env.fresh()
         arg = env.fresh()
         res = env.fresh()
+        label = f"rtn_{str(self.lastRoutine)}"
+        self.lastRoutine += 1
+
+        routine = [
+            f"{label}:",
+            MovReg(fun, "@fun"),
+            MovReg(arg, "@arg"),
+        ]
+        routine += self.compileExpressionWithNewScope(exp, env, res, name, arg)
+        routine += [
+            MovReg("@res", res),
+            Return(),
+        ]
+        return label, routine
+
+    def compileLambda(self, exp: List, env: Env, reg: str) -> List[Instruction]:
+        name = exp[1]
         r0 = env.fresh()
         t = env.fresh()
 
-        expBody = self.compileExpressionWithNewScope(exp[2], env, res, name, arg)
+        label, routine = self.compileRoutine(exp[2], env, name)
+        self.lambdas += routine
 
-        label = f"rtn_{str(self.lastRoutine)}"
-        self.lastRoutine += 1
-        ins = [
-            f"{label}:",
-            MovReg(fun, "@fun"),
-            MovReg(arg, "@arg")
-        ]
         # TODO buscar las variables libres del scope y guardarlas como enclosed binding
-        paramSize = 5
-        ins += [
+        paramSize = 1
+        ins = [
+            # Comment(f"RESERVAR START {paramSize}:"),
             Alloc(r0, paramSize + 2),
             MovInt(t, 3),
             Store(r0, 0, t),
             MovLabel(t, label),
             Store(r0, 1, t),
-        ]
-        ins += expBody
-        ins += [
-            MovReg("@res", res),
-            Return()
+            MovReg(reg, r0),
+            # Comment(f"RESERVAR END {paramSize}:"),
         ]
         return ins
 
@@ -229,11 +240,14 @@ class FlechaCompiler:
             ins += self.compileExpression(exp[1], env, reg1)
             ins += self.compileExpression(exp[2], env, reg2)
             ins += [
+                # Comment(f"COMPILE APPLY START {reg}: "),
                 Load(reg3, reg1, 1),
                 MovReg("@fun", reg1),
                 MovReg("@arg", reg2),
                 ICall(reg3),
-                MovReg(res, "@res")
+                MovReg(res, "@res"),
+                MovReg(reg, res)
+                # Comment(f"COMPILE APPLY END {reg}: "),
             ]
         return ins
 
@@ -281,13 +295,15 @@ class FlechaCompiler:
                 reg = f"@G_{definition}"
                 env.bindRegister(definition, reg)
 
-    def compileExpressions(self, exps: List, env: Env, reg: str) -> List[Instruction]:
+    def compileExpressions(self, exps: List) -> List[Instruction]:
         instructions = []
+        env = Env()
+        reg = "$main"
         self.registerDefinitions(exps, env)
         for exp in exps:
             res = self.compileExpression(exp, env, reg)
             instructions += res
-        return instructions
+        return [Jump("main")] + self.lambdas + instructions
 
 if __name__ == '__main__':
 
@@ -304,10 +320,8 @@ if __name__ == '__main__':
             inputData = inputContent.read()
 
         compiler = FlechaCompiler()
-        env = Env()
-        reg = "$main"
         exps = json.loads(inputData)
-        insList = compiler.compileExpressions(exps, env, reg)
+        insList = compiler.compileExpressions(exps)
         for ins in insList:
             print(ins)
     except Exception as e:
