@@ -5,7 +5,7 @@ from sys import argv
 from typing import List
 
 from .env import Binding, Env
-from .instructions import Alloc, ICall, Instruction, Jump, JumpEq, Load, MovInt, MovLabel, MovReg, Print, PrintChar, Return, Store
+from .instructions import Alloc, Comment, ICall, Instruction, Jump, JumpEq, Load, MovInt, MovLabel, MovReg, Print, PrintChar, Return, Store
 from .util import isExprConstructor, isExprDef, isExprVar, getExprConstructor
 
 class Tag:
@@ -18,7 +18,6 @@ class Tag:
 
 class FlechaCompiler:
     def __init__(self) -> None:
-        self.env = Env()
         self.tags = {
             "Num": Tag(1, 2),
             "Char": Tag(2, 2),
@@ -44,7 +43,7 @@ class FlechaCompiler:
         tag = self.tags[name]
         return tag
 
-    def compileDef(self, exp: List, env: Env, reg: str) -> List[Instruction]:
+    def compileDef(self, exp: List, env: Env, _: str) -> List[Instruction]:
         name = exp[1]
         defReg = env.get(name).value
         r0 = env.fresh()
@@ -90,18 +89,14 @@ class FlechaCompiler:
 
     def compileVar(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         name = exp[1]
-        if name == "unsafePrintChar":
-            r1 = self.env.fresh()
-            return [
-                Load(r1, reg, 1),
-                PrintChar(r1),
-            ]
-        elif name == "unsafePrintInt":
-            r1 = self.env.fresh()
-            return [
-                Load(r1, reg, 1),
-                Print(r1),
-            ]
+        if name in ["unsafePrintChar", "unsafePrintInt"]:
+            r1 = env.fresh()
+            ins = [Load(r1, reg, 1)]
+            if name == "unsafePrintChar":
+                ins += [PrintChar(r1)]
+            else:
+                ins += [Print(r1)]
+            return ins
         else:
             bindingValue = env.get(name)
             r0 = bindingValue.value
@@ -150,9 +145,9 @@ class FlechaCompiler:
     def compileLet(self, exp: List, env: Env, reg: str) -> List[Instruction]:
         name = exp[1]
         tmp = env.fresh()
+
         insE1 = self.compileExpression(exp[2], env, tmp)
         insE2 = self.compileExpressionWithNewScope(exp[3], env, reg, name, tmp)
-
         return insE1 + insE2
 
     def compileLambda(self, exp: List, env: Env, reg: str) -> List[Instruction]:
@@ -222,7 +217,6 @@ class FlechaCompiler:
         if isExprConstructor(exp[1]):
             ins = self.compileApplyCons(exp, env, reg)
         elif isExprVar(exp[1]):
-
             insExp1 = self.compileVar(exp[1], env, reg)
             insExp2 = self.compileExpression(exp[2], env, reg)
             ins = insExp2 + insExp1
