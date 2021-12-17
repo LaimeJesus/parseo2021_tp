@@ -15,7 +15,10 @@ python -m src.compiler "$INPUT_NAME.ast" > "$INPUT_NAME.mam"
 
 diff "$INPUT_NAME.eval" "$EXPECTED_NAME"
 
-if [ $? != 0 ]
+if [ $? == 0 ]
 then
+    echo "test: $TARGET succeded"
+else
     echo "test: $TARGET failed"
+    exit 1
 fi

@@ -35,5 +35,5 @@ tests=(
 )
 
 for test in "${tests[@]}"; do
-    bash "test_compiler.sh" $test
+    (bash "test_compiler.sh" $test) || exit 1;
 done
