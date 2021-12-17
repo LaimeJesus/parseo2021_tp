@@ -160,18 +160,9 @@ class FlechaCompiler:
         insE2 = self.compileExpressionWithNewScope(exp[3], env, reg, name, tmp)
         return insE1 + insE2
 
-    def compileRoutine(self, exp: List, env: Env, name: str) -> List:
-        fun = env.fresh()
-        arg = env.fresh()
-        res = env.fresh()
+    def compileRoutine(self, exp: List, env: Env, fun: str, arg: str, res: str) -> List:
         label = f"rtn_{str(self.lastRoutine)}"
         self.lastRoutine += 1
-
-        oldBinding = None
-        if env.exists(name):
-            oldBinding = env.get(name)
-        env.bindRegister(name, arg)
-
         freeVars = self.freeVars(exp, env)
 
         routine = [
@@ -180,13 +171,14 @@ class FlechaCompiler:
             MovReg(arg, "@arg"),
         ]
         routine += self.compileExpression(exp, env, res)
+        tmp = env.fresh()
+        routine += self.compileExpression(exp, env, tmp)
+        if isExprLambda(exp):
+            routine += self.compileLambdaCalls(exp, env, tmp, arg, res)
         routine += [
             MovReg("@res", res),
             Return(),
         ]
-        env.unbindRegister(name)
-        if oldBinding:
-            env.bindRegister(oldBinding.name, oldBinding.value)
 
         return label, routine, freeVars
 
@@ -234,7 +226,23 @@ class FlechaCompiler:
         r0 = env.fresh()
         t = env.fresh()
 
-        label, routine, freeVars = self.compileRoutine(exp[2], env, name)
+        fun = env.fresh()
+        arg = env.fresh()
+        res = env.fresh()
+
+        oldBinding = None
+        if env.exists(name):
+            oldBinding = env.get(name)
+        env.bindRegister(name, arg)
+
+        label, routine, freeVars = self.compileRoutine(exp[2], env, fun, arg, res)
+
+        # oldBindings: List[Binding] = []
+        # for ind, var in enumerate(freeVars):
+        #     if env.exists(var):
+        #         oldBindings += [env.get(var)]
+        #     env.bindEnclosed(var, ind + 2)
+
         self.lambdas += routine
 
         paramSize = len(freeVars)
@@ -251,6 +259,14 @@ class FlechaCompiler:
                 MovReg(t, freeVarReg),
                 Store(r0, ind + 2, t),
             ]
+
+        # oldBindings = []
+        # for oldBinding in oldBindings:
+        #     env.bindRegister(oldBinding.name, oldBinding.value)
+
+        env.unbindRegister(name)
+        if oldBinding:
+            env.bindRegister(oldBinding.name, oldBinding.value)
 
         return ins + [
             MovReg(reg, r0),
